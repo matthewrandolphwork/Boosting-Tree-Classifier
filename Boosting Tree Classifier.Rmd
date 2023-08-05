@@ -130,4 +130,4 @@ It appears that as the value of T increases, the boosted model accuracy
 rapidly increases before seeming to converge or slow down. This makes
 sense since more iterations of the boosting algorithm converges to
 higher and higher accuracy. But this means with each iteration you begin
-to flatten out near your maximum accuracy.
+to flatten out near your maximum accuracy. Accuracy maxes out at around 98.8%.
