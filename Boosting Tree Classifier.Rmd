@@ -1,0 +1,133 @@
+---
+title: "Boosting Tree Classifier"
+author: "Matthew Randolph"
+date: "`r Sys.Date()`"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Packages
+
+```{r}
+#intsall.packages('tree')
+#install.packages('gbm')
+#install.packages('randomForest')
+library(tree)
+library(ISLR2)
+library(randomForest)
+library(gbm)
+library(rpart)
+library(dplyr)
+```
+
+# Algorithm
+
+```{r}
+boosted_classification_trees <- function(train_x, train_y, df, number_models_T) {
+  
+  #Initialize maximum depth
+  D = 2
+  
+  #Initialize weights
+  N = nrow(train_y)
+  weights = c()
+  for (x in 1:N) {
+    weights = append(weights,c(1/N))
+  }
+  #print(weights)
+  
+  #initialize decision trees
+  decision_trees_G = list()
+  alphas = c()
+  
+  #Now to the actual for loop
+  for (x in 1:number_models_T) {
+    #Train and store the tree
+    Gt = rpart(target ~ ., data = df, weights = weights, method = "class",
+               control = rpart.control(cp = 0, maxdepth = D))
+    decision_trees_G[[x]] = Gt
+    #Set and store the weight
+    predicted_df = data.frame(predict(Gt, train_x, type = 'class'))
+    predicted_df$numeric = as.numeric(as.character(predicted_df[,1]))
+    actual_df = train_y[2]
+    actual_df$numeric = as.numeric(as.character(actual_df[,1]))
+    correct = (actual_df$numeric * predicted_df$numeric) * (0.5) + 0.5
+    wrong = (actual_df$numeric * predicted_df$numeric) * (-1) + 1
+    weight_wrong = sum(wrong * weights)
+    alpha_t = (0.5) * log((1 - weight_wrong) / weight_wrong)
+    alphas = append(alphas, alpha_t)
+    #Update object weights
+    products = actual_df$numeric * predicted_df$numeric
+    scaled_products = exp((-1) * (alpha_t) * (products))
+    weights = weights * scaled_products
+    #Normalize object weights
+    weights = weights / sum(weights)
+  }
+  result= list(alphas, decision_trees_G)
+  return(result)
+}
+```
+
+# Mushrooms
+
+```{r}
+#load the data into dataframes
+mushrooms = read.csv("mushrooms.csv")
+mushrooms_x = read.csv("mushrooms_X.csv")
+mushrooms_y = read.csv("mushrooms_Y.csv")
+
+#train/test split
+sample <- sample(c(TRUE, FALSE), nrow(mushrooms_x), replace=TRUE, prob=c(0.8,0.2))
+train_x  <- mushrooms_x[sample, ]
+test_x   <- mushrooms_x[!sample, ]
+train_y  <- mushrooms_y[sample, ]
+test_y   <- mushrooms_y[!sample, ]
+
+df = merge(x = train_x, y = train_y, by = "X")
+
+#instantiate T values to test
+test_values_T = c(1,2,3,4)
+for (x in 1:20) {
+    test_values_T = append(test_values_T,c(5*x))
+}
+accuracies = c()
+
+#actually test them
+for(i in 1:length(test_values_T)) {
+  current_T = test_values_T[i]
+  result = boosted_classification_trees(train_x, train_y, df, current_T)
+  alphas = as.numeric(as.character(data.frame(result[1])[,1]))
+  trees = result[2][[1]]
+  
+  fit_tree = trees[[1]]
+  predicted_df = data.frame(predict(fit_tree, test_x, type = 'class'))
+  predicted_df$numeric = as.numeric(as.character(predicted_df[,1]))
+  contribution = predicted_df$numeric * alphas[1]
+  
+  if (current_T > 1) {
+    for (x in 2:current_T) {
+      fit_tree = trees[[x]]
+      predicted_df = data.frame(predict(fit_tree, test_x, type = 'class'))
+      predicted_df$numeric = as.numeric(as.character(predicted_df[,1]))
+      contribution = contribution + predicted_df$numeric * alphas[x]
+    }
+  }
+  
+  contribution = sign(contribution)
+  actual_df = test_y[2]
+  actual_df$numeric = as.numeric(as.character(actual_df[,1]))
+  correct = (actual_df$numeric * contribution) * (0.5) + 0.5
+  accuracy = sum(correct)/length(correct)
+  accuracies = append(accuracies, accuracy)
+}
+
+plot(test_values_T,accuracies)
+```
+
+It appears that as the value of T increases, the boosted model accuracy
+rapidly increases before seeming to converge or slow down. This makes
+sense since more iterations of the boosting algorithm converges to
+higher and higher accuracy. But this means with each iteration you begin
+to flatten out near your maximum accuracy.
